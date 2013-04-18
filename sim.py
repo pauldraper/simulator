@@ -1,3 +1,4 @@
+import collections
 import itertools
 import logging
 import sched
@@ -32,9 +33,6 @@ class Simulator:
 		self._log(t, 'created from %s', f)
 		t.switch()
 	
-	def new_event(self):
-		return Event(self)
-	
 	def sleep(self, timeout):
 		"""Put the current thread to sleep for an amount of time."""
 		t = greenlet.getcurrent()
@@ -50,14 +48,16 @@ class Simulator:
 		"""Run the simulation to completion."""
 		self._edt.switch()
 
+sim = Simulator() # singleton
+
+class TimeoutException(Exception):
+	"""Thrown when a call to wait() times out."""
+	pass
+
 class Event:
 	"""The equivalent of a condition variable."""
 	
-	class TimeoutException(Exception):
-		"""Thrown when a call to wait() times out."""
-		pass
-	
-	def __init__(self, sim):
+	def __init__(self, sim=sim):
 		"""Create an Event."""
 		self.__sim = sim
 		self.__waiting = set()
@@ -69,7 +69,7 @@ class Event:
 	def wait(self, timeout=None):
 		"""Cause the current thread to wait on this Event.
 		If timeout is specified and notify() is not called within the timeout, an
-		Event.TimeoutException is raised."""
+		TimeoutException is raised."""
 		t = greenlet.getcurrent()
 		self.__sim._log(t, 'waiting on %s', self)
 		self.__waiting.add(t)
@@ -80,7 +80,7 @@ class Event:
 					self.__waiting.remove(t)
 					self.__sim._log(t, 'waking up due to timeout on %s', self)
 					t.parent = self.__sim._edt
-					t.throw(Event.TimeoutException(self))
+					t.throw(TimeoutException(self))
 			self.__timeouts.add(watchdog)
 			self.__simulator._scheduler.enter(timeout, 1, watchdog, ())
 		t.parent.switch()
@@ -96,4 +96,34 @@ class Event:
 			other_t.parent = t
 			other_t.switch(*args, **kwargs)
 
-sim = Simulator() # singleton
+class Semaphore:
+	
+	def __init__(self, count=0, sim=sim):
+		self._count = count
+		self.__sim = sim
+		self.__events = collections.deque()
+
+	def post(self):
+		self._count += 1
+		if self.__events:
+			self.__events.pop().notify()
+
+	def wait(self, timeout=None):
+		if self._count:
+			self._count -= 1
+		else:
+			event = Event(self.__sim)
+			self.__events.appendleft(event)
+			event.wait(timeout)
+
+class Mutex:
+	
+	def __init__(self, sim=sim):
+		self.__semaphore = Semaphore(count=1, sim=sim)
+		
+	def lock(self, timeout=None):
+		self.__semaphore.wait(timeout)
+		
+	def unlock(self):
+		if not self.__semaphore._count:
+			self.__semaphore.post()
