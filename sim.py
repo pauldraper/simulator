@@ -75,15 +75,15 @@ class Event:
 		self.__waiting.add(t)
 		if timeout is not None:
 			def watchdog():
-				if watchdog in self.timeouts:
+				if watchdog in self.__timeouts:
 					self.__timeouts.remove(watchdog)
 					self.__waiting.remove(t)
 					self.__sim._log(t, 'waking up due to timeout on %s', self)
 					t.parent = self.__sim._edt
 					t.throw(TimeoutException(self))
 			self.__timeouts.add(watchdog)
-			self.__simulator._scheduler.enter(timeout, 1, watchdog, ())
-		t.parent.switch()
+			self.__sim._scheduler.enter(timeout, 1, watchdog, ())
+		return t.parent.switch()
 	
 	def notify(self, *args, **kwargs):
 		"""Wake up any threads waiting on this Event."""
