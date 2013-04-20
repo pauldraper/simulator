@@ -105,13 +105,12 @@ class Semaphore:
 
 	def post(self):
 		self._count += 1
-		if self.__events:
+		if self._count > 0 and self.__events:
 			self.__events.pop().notify()
 
 	def wait(self, timeout=None):
-		if self._count:
-			self._count -= 1
-		else:
+		self._count -= 1
+		if self._count > 0:
 			event = Event(self.__sim)
 			self.__events.appendleft(event)
 			event.wait(timeout)
